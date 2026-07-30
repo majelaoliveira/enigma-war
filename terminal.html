@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENIGMA WAR — Terminal</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root { --bg:#060810; --green:#4aff91; --blue:#4ab8ff; --amber:#ffb020; --red:#ff3a3a; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); font-family:'Share Tech Mono',monospace; height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
+  body::before { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.1) 3px,rgba(0,0,0,0.1) 4px); pointer-events:none; z-index:999; }
+  #terminal { width:100%; max-width:700px; padding:32px; position:relative; z-index:1; }
+  #group-name { font-family:'Bebas Neue',sans-serif; font-size:52px; letter-spacing:8px; line-height:1; text-align:center; }
+  #group-sub { font-size:11px; letter-spacing:4px; opacity:0.5; margin-top:4px; text-align:center; margin-bottom:32px; }
+  #status-bar { display:flex; justify-content:space-between; font-size:11px; letter-spacing:2px; opacity:0.5; margin-bottom:24px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); }
+  #round-label { font-size:11px; letter-spacing:3px; opacity:0.4; margin-bottom:4px; text-align:center; }
+  #round-val { font-family:'Bebas Neue',sans-serif; font-size:28px; letter-spacing:4px; color:var(--amber); text-align:center; margin-bottom:24px; }
+  #cipher-box { border:2px solid rgba(255,255,255,0.15); padding:32px; text-align:center; margin-bottom:24px; background:rgba(0,0,0,0.4); transition:all 0.3s; }
+  #cipher-label { font-size:10px; letter-spacing:4px; opacity:0.4; margin-bottom:12px; }
+  #cipher-display { font-family:'Bebas Neue',sans-serif; font-size:64px; letter-spacing:12px; line-height:1; word-break:break-all; color:rgba(255,255,255,0.2); transition:all 0.3s; }
+  #category-display { font-size:11px; letter-spacing:3px; opacity:0.4; margin-top:12px; }
+  #cipher-box.active { border-color:var(--amber); animation:cipher-glow 2s infinite; }
+  #cipher-box.active #cipher-display { color:var(--amber); }
+  #cipher-box.success { border-color:var(--green); box-shadow:0 0 40px rgba(74,255,145,0.3); }
+  #cipher-box.failure { border-color:var(--red); box-shadow:0 0 30px rgba(255,58,58,0.2); }
+  @keyframes cipher-glow { 0%,100%{box-shadow:0 0 20px rgba(255,176,32,0.2)} 50%{box-shadow:0 0 40px rgba(255,176,32,0.5)} }
+  #timer-val { font-family:'Bebas Neue',sans-serif; font-size:80px; line-height:1; text-align:center; transition:color 0.3s; }
+  #timer-val.urgent { color:var(--red); animation:blink 0.5s infinite; }
+  @keyframes blink { 50%{opacity:0.3} }
+  #timer-bar { height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden; margin:8px 0 20px; }
+  #timer-fill { height:100%; border-radius:3px; transition:width 1s linear,background 0.3s; }
+  #input-area { display:flex; gap:12px; margin-bottom:20px; }
+  #answer-input { flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.2); font-family:'Share Tech Mono',monospace; font-size:24px; letter-spacing:6px; padding:16px 20px; text-transform:uppercase; text-align:center; outline:none; transition:all 0.2s; }
+  #answer-input:disabled { opacity:0.3; cursor:not-allowed; }
+  #btn-send { font-family:'Share Tech Mono',monospace; font-size:16px; letter-spacing:3px; padding:16px 32px; background:transparent; cursor:pointer; text-transform:uppercase; transition:all 0.2s; }
+  #btn-send:disabled { opacity:0.3; cursor:not-allowed; }
+  #feedback { text-align:center; font-size:14px; letter-spacing:3px; min-height:24px; padding:8px; }
+  #feedback.ok { color:var(--green); }
+  #feedback.fail { color:var(--red); }
+  #feedback.wait { color:rgba(255,255,255,0.3); }
+  #history { margin-top:16px; font-size:11px; opacity:0.35; line-height:2; max-height:80px; overflow-y:auto; }
+  #kb-hint { text-align:center; font-size:10px; letter-spacing:2px; color:rgba(255,255,255,0.2); margin-top:12px; }
+  .deco { position:fixed; font-size:140px; opacity:0.03; pointer-events:none; font-family:'Bebas Neue',sans-serif; }
+  #deco-tl { top:-20px; left:-20px; transform:rotate(-15deg); }
+  #deco-br { bottom:-20px; right:-20px; transform:rotate(15deg); }
+  #conn-dot { font-size:10px; letter-spacing:2px; }
+</style>
+</head>
+<body>
+<div class="deco" id="deco-tl">ENIGMA</div>
+<div class="deco" id="deco-br">RESIST</div>
+
+<div id="terminal">
+  <div id="group-name">TERMINAL —</div>
+  <div id="group-sub">CENTRAL DE DECIFRAÇÃO — FRENTE EUROPEIA</div>
+
+  <div id="status-bar">
+    <span id="conn-dot">◉ CONECTANDO...</span>
+    <span id="status-round">RODADA: —</span>
+    <span id="clock-mini">00:00</span>
+  </div>
+
+  <div id="round-label">MENSAGEM INTERCEPTADA — DECIFRE O CÓDIGO</div>
+  <div id="round-val">AGUARDANDO TRANSMISSÃO</div>
+
+  <div id="cipher-box">
+    <div id="cipher-label">🔐 CÓDIGO ENIGMA INTERCEPTADO</div>
+    <div id="cipher-display">⚙ ⚙ ⚙</div>
+    <div id="category-display">Categoria: <span id="cat-val">—</span></div>
+  </div>
+
+  <div id="timer-val">—</div>
+  <div id="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
+
+  <div id="input-area">
+    <input type="text" id="answer-input" placeholder="DECIFRE AQUI..." disabled autocomplete="off" autocorrect="off" spellcheck="false" maxlength="20" />
+    <button id="btn-send" onclick="submitAnswer()" disabled>ENVIAR</button>
+  </div>
+
+  <div id="feedback" class="wait">Aguardando transmissão...</div>
+  <div id="kb-hint">PRESSIONE ENTER PARA CONFIRMAR</div>
+  <div id="history"></div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const GROUP = parseInt(params.get('grupo')) || 1;
+const COLOR = GROUP === 1 ? '#4ab8ff' : '#4aff91';
+
+document.getElementById('group-name').textContent = `TERMINAL GRUPO ${GROUP}`;
+document.getElementById('group-name').style.color = COLOR;
+document.title = `ENIGMA WAR — Grupo ${GROUP}`;
+document.getElementById('answer-input').style.color = COLOR;
+document.getElementById('answer-input').style.borderColor = COLOR;
+document.getElementById('btn-send').style.color = COLOR;
+document.getElementById('btn-send').style.borderColor = COLOR;
+document.getElementById('timer-fill').style.background = COLOR;
+
+
+// === ÁUDIO OFFLINE OTIMIZADO PARA LINUX ===
+let audioContext;
+let audioUnlocked = false;
+
+function initAudio() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  initAudio();
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  gain.gain.value = 0.001;
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.01);
+  audioUnlocked = true;
+}
+
+function playBeep(freq = 800, duration = 300, type = 'sawtooth', volume = 0.4) {
+  initAudio();
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
+  gain.gain.value = volume;
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  setTimeout(() => {
+    gain.gain.linearRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+    oscillator.stop(audioContext.currentTime + 0.4);
+  }, duration);
+}
+
+function playRadioEffect() {
+  unlockAudio();
+  playBeep(520, 180, 'sawtooth', 0.5);
+  setTimeout(() => playBeep(380, 220, 'square', 0.4), 120);
+  setTimeout(() => playBeep(680, 150, 'sawtooth', 0.35), 380);
+  setTimeout(() => playBeep(450, 400, 'triangle', 0.3), 580);
+}
+
+function playExplosion() {
+  unlockAudio();
+  playBeep(180, 80, 'sine', 0.8);
+  setTimeout(() => playBeep(90, 420, 'square', 0.7), 80);
+  setTimeout(() => playBeep(60, 800, 'sawtooth', 0.6), 200);
+  setTimeout(() => playBeep(120, 300, 'triangle', 0.4), 450);
+}
+
+const somRadio = new Audio('sons/radio.mp3');
+const somAlemao = new Audio('sons/alemao.mp3');
+const somSirene = new Audio('sons/sirene.mp3');
+const somBomba = new Audio('sons/bomba.mp3');
+
+
+
+const socket = io();
+
+socket.on('connect', () => {
+  document.getElementById('conn-dot').textContent = '◉ ONLINE';
+  document.getElementById('conn-dot').style.color = COLOR;
+  console.log(`Terminal Grupo ${GROUP} conectado`);
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('conn-dot').textContent = '◉ OFFLINE';
+  document.getElementById('conn-dot').style.color = '#ff3a3a';
+});
+
+// === LISTENERS PRINCIPAIS ===
+socket.on('state', (data) => {
+  console.log('Estado inicial recebido:', data);
+  if (data.active && data.round > 0) activateRound(data);
+});
+
+socket.on('round:start', (data) => {
+  console.log('🎯 Rodada recebida:', data);
+  activateRound(data);
+});
+
+socket.on('timer:tick', (secs) => {
+  if (state && state.active) updateTimerUI(secs);
+});
+
+socket.on('round:end', (data) => {
+  state.active = false;
+  clearInterval(state.timerInterval);
+  if (!state.answered) {
+    setFeedback('Tempo esgotado', 'wait');
+    document.getElementById('cipher-box').className = 'failure';
+  }
+  document.getElementById('round-val').textContent = `RODADA ${state.round} — ${data.answer}`;
+});
+
+socket.on('game:reset', () => {
+  resetTerminal();
+});
+
+socket.on('audio:play', (data) => {
+
+  if (data.tipo === 'transmissao') {
+
+    somRadio.currentTime = 0;
+    somAlemao.currentTime = 0;
+
+    somRadio.play().catch(() => playRadioEffect());
+
+    somRadio.onended = () => {
+      somAlemao.play().catch(() => {});
+    };
+  }
+
+  if (data.tipo === 'sirene') {
+
+    somSirene.currentTime = 0;
+    somSirene.play().catch(() => {});
+  }
+
+  if (data.tipo === 'bomba') {
+
+    somBomba.currentTime = 0;
+    somBomba.play().catch(() => playExplosion());
+  }
+
+});
+
+let state = { round:0, active:false, answered:false, timerSeconds:90, timerInterval:null };
+
+function activateRound(data) {
+  state.round = data.round;
+  state.active = true;
+  state.answered = false;
+  state.timerSeconds = data.timer || 90;
+
+  document.getElementById('round-val').textContent = `RODADA ${data.round} — DECIFRE!`;
+  document.getElementById('status-round').textContent = `RODADA: ${data.round}/10`;
+  document.getElementById('cipher-display').textContent = data.anagram;
+  document.getElementById('cat-val').textContent = data.category;
+  document.getElementById('cipher-box').className = 'active';
+  document.getElementById('answer-input').value = '';
+  document.getElementById('answer-input').disabled = false;
+  document.getElementById('btn-send').disabled = false;
+  document.getElementById('answer-input').focus();
+  setFeedback(`Nova mensagem — Categoria: ${data.category}`, 'wait');
+  updateTimerUI(state.timerSeconds);
+  clearInterval(state.timerInterval);
+}
+
+function updateTimerUI(secs) {
+  if (secs < 0) secs = 0;
+  const el = document.getElementById('timer-val');
+  el.textContent = secs;
+  el.className = secs <= 15 ? 'urgent' : '';
+  const fill = document.getElementById('timer-fill');
+  fill.style.width = (secs/90*100) + '%';
+  fill.style.background = secs<=15 ? '#ff3a3a' : secs<=30 ? '#ffb020' : COLOR;
+}
+
+document.getElementById('answer-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitAnswer();
+  setTimeout(() => {
+    document.getElementById('answer-input').value = 
+      document.getElementById('answer-input').value.toUpperCase().replace(/[^A-ZÁÉÍÓÚÀÂÊÔÃÕÇ]/g,'');
+  }, 0);
+});
+
+function submitAnswer() {
+  if (!state.active || state.answered) return;
+  const val = document.getElementById('answer-input').value.trim().toUpperCase();
+  if (!val) return;
+  state.answered = true;
+  disableInput();
+  socket.emit('answer:submit', { group: GROUP, answer: val, round: state.round });
+  setFeedback(`✉ ENVIADO: "${val}"`, 'ok');
+  document.getElementById('cipher-box').className = 'success';
+  addHistory(`Rodada ${state.round} → "${val}"`);
+}
+
+function disableInput() {
+  document.getElementById('answer-input').disabled = true;
+  document.getElementById('btn-send').disabled = true;
+}
+
+function setFeedback(msg, type) {
+  const el = document.getElementById('feedback');
+  el.textContent = msg; 
+  el.className = type;
+}
+
+function addHistory(msg) {
+  const h = document.getElementById('history');
+  const d = document.createElement('div');
+  d.textContent = `▸ ${msg}`;
+  h.prepend(d);
+}
+
+function resetTerminal() {
+  state = { round:0, active:false, answered:false, timerSeconds:90, timerInterval:null };
+  clearInterval(state.timerInterval);
+  document.getElementById('cipher-box').className = '';
+  document.getElementById('cipher-display').textContent = '⚙ ⚙ ⚙';
+  document.getElementById('cat-val').textContent = '—';
+  document.getElementById('round-val').textContent = 'AGUARDANDO TRANSMISSÃO';
+  document.getElementById('status-round').textContent = 'RODADA: —';
+  document.getElementById('timer-val').textContent = '—';
+  document.getElementById('timer-fill').style.width = '100%';
+  document.getElementById('answer-input').value = '';
+  disableInput();
+  setFeedback('Jogo reiniciado', 'wait');
+  document.getElementById('history').innerHTML = '';
+}
+
+setInterval(() => {
+  const n = new Date();
+  document.getElementById('clock-mini').textContent =
+    [n.getHours(),n.getMinutes()].map(v=>String(v).padStart(2,'0')).join(':');
+}, 1000);
+</script>
+</body>
+</html>

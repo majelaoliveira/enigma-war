@@ -527,9 +527,34 @@ function processAnswer(group, correct, submitted) {
 }
 
 function resolveRound() {
-  const cidadesDestruidas =
-    (!gs.g1Correct ? 1 : 0) +
-    (!gs.g2Correct ? 1 : 0);
+     const cidadesDestruidas =
+        (!gs.g1Correct ? 1 : 0) +
+        (!gs.g2Correct ? 1 : 0);
+
+    // MARCA CIDADES DESTRUÍDAS NO ESTADO
+    if (!gs.g1Correct && gs.attackedCity1) {
+        gs.cities1[gs.attackedCity1.i].alive = false;
+
+        const cityEl1 =
+            document.getElementById(`city-g1-${gs.attackedCity1.i}`);
+
+        if (cityEl1) {
+            cityEl1.classList.remove('alive-1');
+            cityEl1.classList.add('dead');
+        }
+    }
+
+    if (!gs.g2Correct && gs.attackedCity2) {
+        gs.cities2[gs.attackedCity2.i].alive = false;
+
+        const cityEl2 =
+            document.getElementById(`city-g2-${gs.attackedCity2.i}`);
+
+        if (cityEl2) {
+            cityEl2.classList.remove('alive-2');
+            cityEl2.classList.add('dead');
+        }
+    }
 
 if (cidadesDestruidas > 0) {
 
